@@ -1,8 +1,8 @@
-# AdventureWorks Intelligence Suite
+# AdventureWorks Business Intelligence Analytics
 
 ## Project Overview
 
-The AdventureWorks Intelligence Suite is a comprehensive SQL-based analytics solution designed to extract actionable business insights from the AdventureWorksDW2019 database. This project combines three critical analysis dimensions—sales trends, product performance, and customer behavior—to provide a complete view of business operations and opportunities.
+The AdventureWorks Business Intelligence Analytics is a comprehensive SQL-based analytics solution designed to extract actionable business insights from the AdventureWorksDW2019 database. This project combines three critical analysis dimensions—sales trends, product performance, and customer behavior—to provide a complete view of business operations and opportunities.
 
 *Key Objectives:*
 
@@ -11,11 +11,7 @@ The AdventureWorks Intelligence Suite is a comprehensive SQL-based analytics sol
 - Segment customers for targeted marketing and retention strategies
 - Enable data-driven decision-making through clear, quantifiable metrics
 
-*Technology Stack:*
 
-- Database: SQL Server (AdventureWorksDW2019)
-- Query Language: T-SQL
-- Analysis Methods: Time-series analysis, RFM segmentation, product categorization
 
 -----
 
@@ -23,14 +19,6 @@ The AdventureWorks Intelligence Suite is a comprehensive SQL-based analytics sol
 
 ### 1. Sales Analysis - Temporal Trends
 
-*File:* sales_analysis.sql
-
-*What It Covers:*
-
-- Combines Internet and Reseller sales channels into unified metrics
-- Monthly aggregation of orders, quantities, and financial performance
-- Net sales calculation (excluding tax) and profit computation
-- Profit margin percentages tracked over time
 
 *Key Metrics:*
 
@@ -41,26 +29,57 @@ The AdventureWorks Intelligence Suite is a comprehensive SQL-based analytics sol
 - Running totals for cumulative performance
 - 3-month moving averages for trend smoothing
 
-*Insights Delivered:*
+```sql
 
-- Seasonal sales patterns and cyclical trends
-- Revenue growth trajectory and momentum
-- Profitability trends independent of volume
-- Early warning signals through moving averages
-- Overall business health indicators
+WITH CombinedSales AS (
+    SELECT 
+        FORMAT(OrderDate,'yyyy-MM') AS OrderDate,
+        OrderQuantity,
+        SalesOrderNumber,
+        SalesAmount - TaxAmt AS NetSales,
+        SalesAmount - ProductStandardCost AS Profit
+    FROM FactInternetSales
+    WHERE OrderDate IS NOT NULL
+    UNION ALL
+    SELECT 
+        FORMAT(OrderDate,'yyyy-MM') AS OrderDate,
+        OrderQuantity,
+        SalesOrderNumber,
+        SalesAmount - TaxAmt AS NetSales,
+        SalesAmount - ProductStandardCost AS Profit
+    FROM FactResellerSales
+    WHERE OrderDate IS NOT NULL
+),
+SalesCalc AS (
+    SELECT
+        OrderDate,
+        COUNT(DISTINCT SalesOrderNumber) AS TotalOrders,
+        SUM(OrderQuantity) AS TotalQuantity,
+        ROUND(SUM(NetSales), 2) AS NetSales,
+        ROUND(SUM(Profit), 2) AS Profit,
+        ROUND(SUM(Profit) / NULLIF(SUM(NetSales), 0) * 100, 2) AS ProfitMargin_pct
+    FROM CombinedSales
+    GROUP BY OrderDate
+)
+SELECT
+    OrderDate,
+    TotalOrders,
+    TotalQuantity,
+    NetSales,
+    Profit,
+    ProfitMargin_pct,
+    SUM(NetSales) OVER (ORDER BY OrderDate ROWS UNBOUNDED PRECEDING) AS RunningTotal_NetSales,
+    SUM(Profit) OVER (ORDER BY OrderDate ROWS UNBOUNDED PRECEDING) AS RunningTotal_Profit,
+    ROUND(AVG(NetSales) OVER (ORDER BY OrderDate ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS MovingAvg_NetSales,
+    ROUND(AVG(Profit) OVER (ORDER BY OrderDate ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS MovingAvg_Profit
+FROM SalesCalc
+ORDER BY OrderDate;
+```
 
 -----
 
 ### 2. Product Performance Report
 
-*File:* product_performance.sql
-
-*What It Covers:*
-
-- Unified view of product sales across all channels
-- Product categorization with category and subcategory hierarchy
-- Cost, revenue, and profitability calculations per product
-- Performance-based product segmentation using average benchmarks
 
 *Key Metrics:*
 
@@ -69,33 +88,75 @@ The AdventureWorks Intelligence Suite is a comprehensive SQL-based analytics sol
 - Profit Margin percentages
 - Product segmentation into four quadrants
 
-*Product Segments:*
+```sql
 
-- *High Sales - High Margin:* Star products driving revenue and profit
-- *High Sales - Low Margin:* Volume leaders needing pricing/cost optimization
-- *Low Sales - High Margin:* Niche opportunities for promotion
-- *Low Sales - Low Margin:* Candidates for discontinuation or repositioning
-
-*Insights Delivered:*
-
-- Which products to prioritize in marketing campaigns
-- Inventory optimization opportunities
-- Pricing strategy guidance
-- Product portfolio rationalization recommendations
-- Cross-selling and upselling opportunities
+WITH CombinedSales AS (
+    SELECT
+        ProductKey,
+        SalesOrderNumber,
+        OrderQuantity,
+        SalesAmount,
+        TaxAmt,
+        ProductStandardCost
+    FROM FactInternetSales
+    UNION ALL
+    SELECT
+        ProductKey,
+        SalesOrderNumber,
+        OrderQuantity,
+        SalesAmount,
+        TaxAmt,
+        ProductStandardCost
+    FROM FactResellerSales
+),
+Product_Calc AS (
+    SELECT
+        ProductKey,
+        COUNT(DISTINCT SalesOrderNumber) AS TotalOrders,
+        SUM(OrderQuantity) AS Total_Quantity,
+        ROUND(SUM(SalesAmount - TaxAmt),2) AS NetSales,
+        ROUND(SUM(ProductStandardCost),2) AS TotalCost,
+        ROUND(SUM(SalesAmount - TaxAmt) - SUM(ProductStandardCost),2) AS Profit,
+        (SUM(SalesAmount - TaxAmt) - SUM(ProductStandardCost)) 
+            / NULLIF(SUM(SalesAmount - TaxAmt), 0) * 100 AS ProfitMargin_pct
+    FROM CombinedSales
+    GROUP BY ProductKey
+),
+Averages AS (
+    SELECT 
+        AVG(NetSales) AS AvgSales,
+        AVG(ProfitMargin_pct) AS AvgProfitMargin
+    FROM Product_Calc
+)
+SELECT 
+    p.ProductKey,
+    d.EnglishProductName AS ProductName,
+    COALESCE(s.EnglishProductSubcategoryName, 'Others') AS Subcategory,
+    COALESCE(c.EnglishProductCategoryName, 'Others') AS Category,
+    p.TotalOrders,
+    p.Total_Quantity,
+    p.NetSales,
+    p.TotalCost,
+    p.Profit, 
+    p.ProfitMargin_pct,
+    CASE
+        WHEN p.NetSales >= a.AvgSales AND p.ProfitMargin_pct >= a.AvgProfitMargin THEN 'High Sales - High Margin'
+        WHEN p.NetSales >= a.AvgSales AND p.ProfitMargin_pct < a.AvgProfitMargin THEN 'High Sales - Low Margin'
+        WHEN p.NetSales < a.AvgSales AND p.ProfitMargin_pct >= a.AvgProfitMargin THEN 'Low Sales - High Margin'
+        ELSE 'Low Sales - Low Margin'
+    END AS ProductSegment   
+FROM Product_Calc p
+CROSS JOIN Averages a  
+LEFT JOIN DimProduct d ON p.ProductKey = d.ProductKey
+LEFT JOIN DimProductSubcategory s ON d.ProductSubcategoryKey = s.ProductSubcategoryKey
+LEFT JOIN DimProductCategory c ON s.ProductCategoryKey = c.ProductCategoryKey
+ORDER BY p.NetSales DESC;
+```
 
 -----
 
 ### 3. RFM Customer Segmentation Report
 
-*File:* customer_segmentation.sql
-
-*What It Covers:*
-
-- Customer purchase behavior analysis using RFM methodology
-- Demographic profiling (age, location)
-- Customer lifetime value indicators
-- Behavioral segmentation for targeted engagement
 
 *Key Metrics:*
 
@@ -107,29 +168,97 @@ The AdventureWorks Intelligence Suite is a comprehensive SQL-based analytics sol
 - Order lifespan (months between first and last purchase)
 - Average Order Value and Monthly Spending
 
-*Customer Segments:*
-
-- *Champion (RFM 13-15):* Best customers—high value, recent, frequent
-- *Loyal Customer (RFM 10-12):* Reliable revenue generators
-- *Potential Loyalist (RFM 7-9):* Growing customers worth nurturing
-- *At Risk (RFM 4-6):* Declining engagement—retention needed
-- *Lost (RFM 3 or below):* Inactive customers—reactivation campaigns
-
-*Additional Dimensions:*
-
-- Age group segmentation (1-20, 21-40, 41-60, 61-80, 80+)
-- Geographic analysis (City, Province, Country)
-- Purchase pattern analysis
-
-*Insights Delivered:*
-
-- Which customers to prioritize for retention
-- Optimal timing for re-engagement campaigns
-- Customer lifetime value predictions
-- Geographic expansion opportunities
-- Age-based product recommendation strategies
-- Churn risk identification and prevention
-
+```sql
+WITH RFM_Calc AS ( 
+	SELECT 
+		CustomerKey,
+		COUNT(DISTINCT ProductKey) AS TotalProductsPurchased,
+		SUM(OrderQuantity) AS TotalQuantity,
+		CAST(MAX(OrderDate) AS DATE) AS RecentPurchaseDate,
+		DATEDIFF(DAY, CAST(MAX(OrderDate) AS DATE), GETDATE()) AS Recency_Days,
+		COUNT(DISTINCT SalesOrderNumber) AS Frequency,
+		SUM(SalesAmount) AS Monetary
+	FROM FactInternetSales
+	WHERE OrderDate IS NOT NULL 
+	GROUP BY CustomerKey 
+),
+RFM_Scores AS (
+    SELECT
+        CustomerKey,
+		TotalProductsPurchased,
+		TotalQuantity,
+		RecentPurchaseDate,
+        Recency_Days,
+        Frequency,
+        Monetary,
+        NTILE(5) OVER (ORDER BY Recency_Days ASC) AS R_Score,
+        NTILE(5) OVER (ORDER BY Frequency DESC) AS F_Score,
+        NTILE(5) OVER (ORDER BY Monetary DESC) AS M_Score
+    FROM RFM_Calc
+),
+Customer_Details AS ( 
+	SELECT 
+		r.CustomerKey,
+		CONCAT(d.FirstName, ' ', d.LastName) AS CustomerName,
+		d.BirthDate,
+		DATEDIFF(YEAR, d.BirthDate, GETDATE()) AS Age,
+		g.City,
+		g.StateProvinceName AS Province,
+		g.EnglishCountryRegionName AS Country,
+		r.TotalProductsPurchased,
+		r.TotalQuantity,
+		d.DateFirstPurchase AS FirstPurchaseDate,
+		r.RecentPurchaseDate,
+		DATEDIFF(MONTH, d.DateFirstPurchase, r.RecentPurchaseDate) AS OrderLifespan_Month,
+		r.Monetary / r.Frequency AS AverageOrderValue,
+		r.Recency_Days,
+		r.Frequency,
+		r.Monetary,
+		r.R_Score,
+        r.F_Score, 
+        r.M_Score,
+		r.R_Score + r.F_Score + r.M_Score AS RFM_Score
+	FROM RFM_Scores r
+	LEFT JOIN DimCustomer d ON r.CustomerKey = d.CustomerKey
+	LEFT JOIN DimGeography g ON d.GeographyKey = g.GeographyKey
+)
+SELECT 
+	CustomerKey,
+	CustomerName,
+	BirthDate,
+	Age,		
+	CASE 
+		WHEN Age <= 20 THEN '1-20'
+		WHEN Age BETWEEN 21 AND 40 THEN '21-40'
+		WHEN Age BETWEEN 41 AND 60 THEN '41-60'
+		WHEN Age BETWEEN 61 AND 80 THEN '60-80'
+		ELSE 'Above 80'
+	END AS Age_Group,
+	City,
+	Province,
+	Country,
+	TotalProductsPurchased,
+	TotalQuantity,
+	FirstPurchaseDate,
+	RecentPurchaseDate,
+	OrderLifespan_Month,
+	AverageOrderValue,
+	CASE 
+		WHEN OrderLifespan_Month = 0 THEN Monetary
+		ELSE Monetary / OrderLifespan_Month
+	END AS AverageMonthlySpending,
+	Recency_Days,
+	Frequency,
+	Monetary,
+	CASE
+		WHEN RFM_Score >= 13 THEN 'Champion'
+		WHEN RFM_Score BETWEEN 10 AND 12 THEN 'Loyal Customer'
+		WHEN RFM_Score BETWEEN 7 AND 9 THEN 'Potential Loyalist'
+		WHEN RFM_Score BETWEEN 4 AND 6 THEN 'At Risk'
+		ELSE 'Lost'
+	END AS CustomerSegment
+FROM Customer_Details;
+```
 -----
 
 ## Business Impact
@@ -137,30 +266,22 @@ The AdventureWorks Intelligence Suite is a comprehensive SQL-based analytics sol
 This analytics suite enables stakeholders to:
 
 1. *Optimize Marketing Spend:* Target the right customers with the right products at the right time
-1. *Improve Inventory Management:* Stock decisions based on profitability, not just sales volume
-1. *Enhance Customer Retention:* Identify at-risk customers before they churn
-1. *Drive Strategic Planning:* Data-backed decisions on product development and market expansion
-1. *Increase Profitability:* Focus resources on high-margin products and high-value customers
+2. *Improve Inventory Management:* Stock decisions based on profitability, not just sales volume
+3. *Enhance Customer Retention:* Identify at-risk customers before they churn
+4. *Drive Strategic Planning:* Data-backed decisions on product development and market expansion
+5. *Increase Profitability:* Focus resources on high-margin products and high-value customers
 
------
-
-## Getting Started
-
-1. Ensure access to AdventureWorksDW2019 database
-1. Execute scripts in SQL Server Management Studio or Azure Data Studio
-1. Scripts can be run independently in any order
-1. Results can be exported to Excel, Power BI, or Tableau for visualization
 
 -----
 
 ## Contact Information
 
-*Project Author:* [Your Name]  
-*Email:* [your.email@example.com]  
-*LinkedIn:* [linkedin.com/in/yourprofile]  
-*GitHub:* [github.com/yourusername]
+## Contact Information
 
-For questions, suggestions, or collaboration opportunities, please reach out via email or LinkedIn.
+- **Name**: Ziad Mohamed Soliman
+- **Email**: ziad.mohamed17.1@gmail.com
+- **LinkedIn**: [Ziad Soliman](https://linkedin.com/in/ziadsoliman)
+
 
 ## Resources
 - [AdventureWorksDW2019 Database](https://learn.microsoft.com/en-us/sql/samples/adventureworks-install-configure?view=sql-server-ver17&tabs=ssms)
