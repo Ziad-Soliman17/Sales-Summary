@@ -1,8 +1,9 @@
-# AdventureWorks Business performance Analytics
+# AdventureWorks Sales Performance Analytics
 
 ## Project Overview
 
-This SQL script performs a comprehensive analytics workflow across sales, product performance, and customer behavior using the AdventureWorks sample data warehouse. It integrates data from both Internet and Reseller sales, calculates key business metrics, and produces monthly sales trends with running totals and moving averages. The script segments products based on net sales and profit margins and implements a full RFM (Recency, Frequency, Monetary) model to classify customers into purchasing behavior segments such as Champions, Loyal Customers, and At-Risk. The final output provides actionable insights to support data-driven decisions in revenue management, product profitability, and customer lifecycle optimization.
+SQL sales Performance reports covering sales, product performance, and customer purchasing behavior using the AdventureWorks sample data warehouse that calculates key business metrics, produces monthly sales trends with running totals and moving averages, segments products based on net sales and profit margins and classifies customers into purchasing behavior segments. The final output provides actionable insights to support data-driven decisions in revenue management, product profitability, and customer lifecycle optimization.
+
 
 *Key Objectives:*
 
