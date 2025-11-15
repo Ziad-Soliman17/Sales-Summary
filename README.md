@@ -1,8 +1,8 @@
-# AdventureWorks Business Intelligence Analytics
+# AdventureWorks Business performance Analytics
 
 ## Project Overview
 
-The AdventureWorks Business Intelligence Analytics is a comprehensive SQL-based analytics solution designed to extract actionable business insights from the AdventureWorksDW2019 database. This project combines three critical analysis dimensions—sales trends, product performance, and customer behavior—to provide a complete view of business operations and opportunities.
+This SQL script performs a comprehensive analytics workflow across sales, product performance, and customer behavior using the AdventureWorks sample data warehouse. It integrates data from both Internet and Reseller sales, calculates key business metrics, and produces monthly sales trends with running totals and moving averages. The script segments products based on net sales and profit margins and implements a full RFM (Recency, Frequency, Monetary) model to classify customers into purchasing behavior segments such as Champions, Loyal Customers, and At-Risk. The final output provides actionable insights to support data-driven decisions in revenue management, product profitability, and customer lifecycle optimization.
 
 *Key Objectives:*
 
@@ -11,13 +11,11 @@ The AdventureWorks Business Intelligence Analytics is a comprehensive SQL-based 
 - Segment customers for targeted marketing and retention strategies
 - Enable data-driven decision-making through clear, quantifiable metrics
 
-
-
 -----
 
 ## SQL Scripts & Analysis Coverage
 
-### 1. Sales Analysis - Temporal Trends
+### 1. Sales Analysis 
 
 
 *Key Metrics:*
@@ -30,7 +28,7 @@ The AdventureWorks Business Intelligence Analytics is a comprehensive SQL-based 
 - 3-month moving averages for trend smoothing
 
 ```sql
-
+--Combined internet and Reseller Sales Fact tables CTE
 WITH CombinedSales AS (
     SELECT 
         FORMAT(OrderDate,'yyyy-MM') AS OrderDate,
@@ -50,6 +48,7 @@ WITH CombinedSales AS (
     FROM FactResellerSales
     WHERE OrderDate IS NOT NULL
 ),
+--Sales calculation CTE
 SalesCalc AS (
     SELECT
         OrderDate,
@@ -61,6 +60,7 @@ SalesCalc AS (
     FROM CombinedSales
     GROUP BY OrderDate
 )
+--  Final output with running totals and moving averages
 SELECT
     OrderDate,
     TotalOrders,
@@ -68,6 +68,7 @@ SELECT
     NetSales,
     Profit,
     ProfitMargin_pct,
+    -- Running totals and moving averages for Net Sales and Profit
     SUM(NetSales) OVER (ORDER BY OrderDate ROWS UNBOUNDED PRECEDING) AS RunningTotal_NetSales,
     SUM(Profit) OVER (ORDER BY OrderDate ROWS UNBOUNDED PRECEDING) AS RunningTotal_Profit,
     ROUND(AVG(NetSales) OVER (ORDER BY OrderDate ROWS BETWEEN 2 PRECEDING AND CURRENT ROW), 2) AS MovingAvg_NetSales,
@@ -86,10 +87,10 @@ ORDER BY OrderDate;
 - Total Orders and Quantity per product
 - Net Sales, Total Cost, and Profit
 - Profit Margin percentages
-- Product segmentation into four quadrants
+- Product segmentation into four quadrants according to average sales and profit margins
 
 ```sql
-
+--Combined internet and Reseller Sales Fact tables CTE
 WITH CombinedSales AS (
     SELECT
         ProductKey,
@@ -109,6 +110,7 @@ WITH CombinedSales AS (
         ProductStandardCost
     FROM FactResellerSales
 ),
+-- Product calculations CTE
 Product_Calc AS (
     SELECT
         ProductKey,
@@ -122,12 +124,14 @@ Product_Calc AS (
     FROM CombinedSales
     GROUP BY ProductKey
 ),
+-- Averages CTE for segmentation thresholds
 Averages AS (
     SELECT 
         AVG(NetSales) AS AvgSales,
         AVG(ProfitMargin_pct) AS AvgProfitMargin
     FROM Product_Calc
 )
+-- Final output with product details and segmentation
 SELECT 
     p.ProductKey,
     d.EnglishProductName AS ProductName,
@@ -169,6 +173,7 @@ ORDER BY p.NetSales DESC;
 - Average Order Value and Monthly Spending
 
 ```sql
+-- RFM calculations CTE
 WITH RFM_Calc AS ( 
 	SELECT 
 		CustomerKey,
@@ -182,6 +187,7 @@ WITH RFM_Calc AS (
 	WHERE OrderDate IS NOT NULL 
 	GROUP BY CustomerKey 
 ),
+-- RFM Scoring CTE
 RFM_Scores AS (
     SELECT
         CustomerKey,
@@ -196,6 +202,7 @@ RFM_Scores AS (
         NTILE(5) OVER (ORDER BY Monetary DESC) AS M_Score
     FROM RFM_Calc
 ),
+-- combine customer location  details with RFM scores
 Customer_Details AS ( 
 	SELECT 
 		r.CustomerKey,
@@ -222,6 +229,7 @@ Customer_Details AS (
 	LEFT JOIN DimCustomer d ON r.CustomerKey = d.CustomerKey
 	LEFT JOIN DimGeography g ON d.GeographyKey = g.GeographyKey
 )
+-- Final output with age group and RFM segmentation
 SELECT 
 	CustomerKey,
 	CustomerName,
@@ -261,24 +269,8 @@ FROM Customer_Details;
 ```
 -----
 
-## Business Impact
-
-This analytics suite enables stakeholders to:
-
-1. *Optimize Marketing Spend:* Target the right customers with the right products at the right time
-2. *Improve Inventory Management:* Stock decisions based on profitability, not just sales volume
-3. *Enhance Customer Retention:* Identify at-risk customers before they churn
-4. *Drive Strategic Planning:* Data-backed decisions on product development and market expansion
-5. *Increase Profitability:* Focus resources on high-margin products and high-value customers
-
-
------
-
 ## Contact Information
 
-## Contact Information
-
-- **Name**: Ziad Mohamed Soliman
 - **Email**: ziad.mohamed17.1@gmail.com
 - **LinkedIn**: [Ziad Soliman](https://linkedin.com/in/ziadsoliman)
 
